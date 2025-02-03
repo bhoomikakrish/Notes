@@ -1,0 +1,60 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_ACCOUNT_ID = credentials('AWS_ACCOUNT_ID')
+        AWS_REGION = credentials('AWS_REGION')
+        REPO_NAME = 'my-ecr-repo'
+        GIT_REPO = 'https://github.com/bhoomikakrish/NodeJs_project-1.git'
+        GIT_BRANCH = 'main'
+    }
+
+    stages {
+        stage('Git Clone') {
+            steps {
+                script {
+                    // Clone the repository before fetching the commit ID
+                    git branch: "${GIT_BRANCH}", url: "${GIT_REPO}"
+                }
+            }
+        }
+
+        stage('Fetch Latest Commit ID') {
+            steps {
+                script {
+                    env.COMMIT_ID = sh(script: "git rev-parse --short HEAD", returnStdout: true).trim()
+                    echo "Latest Commit ID: ${env.COMMIT_ID}"
+                }
+            }
+        }
+
+        stage('Login to AWS ECR') {
+            steps {
+                script {
+                    withAWS(credentials: 'AWS_CREDENTIALS', region: "${AWS_REGION}") {
+                        sh """
+                        aws ecr get-login-password --region ${AWS_REGION} | \
+                        docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Pull Docker Image from ECR') {
+            steps {
+                script {
+                    sh "docker pull ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${REPO_NAME}:${env.COMMIT_ID}"
+                }
+            }
+        }
+
+        stage('Run Container') {
+            steps {
+                script {
+                    sh "docker run -d --name my-container -p 8081:8081 ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${REPO_NAME}:${env.COMMIT_ID}"
+                }
+            }
+        }
+    }
+}
