@@ -1,0 +1,60 @@
+Step1 : Install jenkins 
+Step2: create IAM user & group then give s3 full access to that group
+Step3: Select Created user then Security credentials here we can genrate access key and Secreate key
+Step4: Go to jenkins install S3 Publisher plugin
+Step5: Create pipeline job(Jenkins-Backup) then go to configure select pipeline write jenkins file
+Step6: on upload s3 section was created by pipeline syntax (Select pipeline syntax > s3Upload: Publish artifacts to s3 Bucket, S3 profile=s3 backup, click on Files to upload Source =*.zip, Exclude=empty, Destination Bucket =Jenkins_Backup.zip, Storage class=standard, Bucket Region=ap-south-1, Publish Failure Result Constraint
+=Failure, Build console log level?=INFO ) Genearate syntax.
+Step7: To copy zip file from s3 bucket to inside instance 
+        aws s3 cp s3://jenkins-backup-for-1/Jenkins_Backup.zip <destination location>
+
+pipeline {
+    agent any
+
+    environment {
+        BACKUP_FILE = "Jenkins_Backup.zip"
+    }
+
+    stages {
+        stage('Jenkins-Backup') {
+            steps {
+                script {
+                    sh """
+                        cd /var/lib 
+                        zip -r ${BACKUP_FILE} jenkins # making zip(Zip file name is Jenkins_Backup.zip) of jenkins folder
+                        mv ${BACKUP_FILE} \$WORKSPACE/  # ✅ Move file to Jenkins workspace # Jenkins_Backup.zip moved into workspace location
+                    """
+                }
+            }
+        }
+
+        stage('Upload into S3 bucket') {
+            steps {
+                script {
+                    s3Upload consoleLogLevel: 'INFO', 
+                        dontSetBuildResultOnFailure: false, 
+                        dontWaitForConcurrentBuildCompletion: false, 
+                        entries: [[
+                            bucket: 'jenkins-backup-for-1', 
+                            excludedFile: '', 
+                            flatten: false, 
+                            gzipFiles: false, 
+                            keepForever: false, 
+                            managedArtifacts: false, 
+                            noUploadOnFailure: false, 
+                            selectedRegion: 'ap-south-1', 
+                            showDirectlyInBrowser: false, 
+                            sourceFile: "${BACKUP_FILE}", // ✅ Now in Jenkins workspace
+                            storageClass: 'STANDARD', 
+                            uploadFromSlave: false, 
+                            useServerSideEncryption: false
+                        ]], 
+                        pluginFailureResultConstraint: 'FAILURE', 
+                        profileName: 's3-backup', 
+                        userMetadata: []
+                }
+            }
+        }
+    }
+}
+
